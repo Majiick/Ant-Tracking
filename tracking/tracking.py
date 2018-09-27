@@ -1,3 +1,5 @@
+# https://en.wikipedia.org/wiki/Kalman_filter
+
 import numpy as np
 import cv2
 
@@ -5,14 +7,14 @@ def flood_fill(mask, seed_x, seed_y):
     pass
 
 
-cap = cv2.VideoCapture('../video1.mp4')  # Load capture video
+cap = cv2.VideoCapture('../video3.mp4')  # Load capture video
 fgbg = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background subtractor.
 
 while(cap.isOpened()):  # While video is opened
     ret, frame = cap.read()  # Ret is just status, frame is the actual image.
     original_frame = frame.copy()  # Save the original frame so we can use it for reference later on.
 
-    frame = cv2.GaussianBlur(frame,(5,5),0)  # Blur the image using a gaussian blur with a 5x5 kernel.
+    frame = cv2.GaussianBlur(frame, (5, 5), 0)  # Blur the image using a gaussian blur with a 5x5 kernel.
     fgmask = fgbg.apply(frame)  # Apply the frame to the background subtractor. fgmask is the result of subtracting the background.
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)  # Convert image from RGB to HSV.
     h, s, v = cv2.split(hsv)  # Get the H, S, and V channels.
