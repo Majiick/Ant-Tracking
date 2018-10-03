@@ -3,12 +3,45 @@
 import numpy as np
 import cv2
 import random
+import math
 
 class Ant:
     def __init__(self, pixels):
         self.pixels = pixels
+        self.getAveragePos()
+        self.color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+
+    def getAveragePos(self):
+        self.avgPos = getAvgPos(self)
+
+    def adjustPos(self, ants):
+        self.getAveragePos()
+        antsInNewFrame = ants
+        closestDist = 1000000;
+        for ant in antsInNewFrame:
+            avgPos = getAvgPos(ant)
+            dist = getDistanceBetweenTwoPoints(self.avgPos, avgPos)
+            if dist < closestDist:
+                closestDist = dist
+                self.pixels = ant.pixels
 
 # Returns the pixels filled
+
+def getDistanceBetweenTwoPoints(avgPosOne, avgPosTwo):
+    return math.sqrt((avgPosOne[0] - avgPosTwo[0])**2 + (avgPosOne[1] - avgPosTwo[1])**2 )
+
+def getAvgPos(ant):
+    sumPixelX = 0
+    sumPixelY = 0
+    sumOfPixels = 0
+    for pixel in ant.pixels:
+        sumPixelX += pixel[0]
+        sumPixelY += pixel[1]
+        sumOfPixels += 1
+
+    #print sumPixelX/sumOfPixels, sumPixelY/sumOfPixels
+    return sumPixelX/sumOfPixels, sumPixelY/sumOfPixels
+
 def flood_fill(mask, seed_x, seed_y):
     assert(isinstance(mask, np.ndarray))
     assert(mask[seed_y, seed_x] == 255)
@@ -76,6 +109,8 @@ for _ in range(200):
     frame = cv2.GaussianBlur(frame, (5, 5), 0)
     fgbg.apply(frame)
     
+firstFrameComplete = False;
+_ants = list()
 
 while(cap.isOpened()):  # While video is opened
     ret, frame = cap.read()  # Ret is just status, frame is the actual image.
@@ -97,12 +132,20 @@ while(cap.isOpened()):  # While video is opened
     im2, contours, hierarchy = cv2.findContours(fgmask,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 
     fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
-    ants = find_ants(fgmask[:,:,0])
-    for ant in ants:
-        random_color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+
+    ########################
+    if(firstFrameComplete == False):
+        firstFrameComplete = True
+        _ants = find_ants(fgmask[:,:,0])
+    ########################
+
+    newAnts = find_ants(fgmask[:,:,0])
+    for ant in _ants:
+        #random_color = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
+        ant.adjustPos(newAnts)
         for pixel in ant.pixels:
-            fgmask[pixel[1], pixel[0]] =  random_color
-    print(len(ants))
+            fgmask[pixel[1], pixel[0]] = ant.color
+    #print(len(ants))
     # cv2.drawContours(fgmask, contours, -1, (0,0,255), 2)
 
     edges = cv2.Canny(frame,100,200)  # Use canny edge detection
