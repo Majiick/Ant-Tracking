@@ -37,11 +37,13 @@ class Ant:
         self.centre = self.minX + ((self.maxX - self.minX) / 2), self.minY + ((self.maxY - self.minY) / 2)
 
     def search_and_update(self, mask):
+        # TODO we need to deal with ants leaving the screen. At the moment, when they do leave the screen, this will
+        # just find the nearest ant, which inevitably leads to a blob forming that shouldn't. Should probably do
+        # something along the lines of not tracking any ants that have pixels on the border of the screen.
         nearest = find_nearest_white(mask, self.centre)
-        # Check here that the nearest pixel isn't too far away (e.g. the size of the ant).
         pixels = flood_fill(fgmask[:,:,0], nearest[0], nearest[1])
         # TODO: If the size is significantly smaller here, the we've found a small subset of pixels near the ant,
-        # in that case we should continue searching somehow until we find the rest of the ant.
+        # and in that case we should continue searching somehow until we find the rest of the ant.
         self.update(pixels)
 
     def overlaps(self, other):
@@ -72,14 +74,11 @@ class AntBlob:
         self.ants[ant.id] = ant
 
     def exit(self, ant):
-        # TODO: for now this just removes the first ant in the dict, need to update ants to store more info to determine which ant is probably leaving.
+        # TODO: for now this just removes a random ant, need to update the Ant class to store more info so
+        # we can determine which ant is most likely leaving.
         id = self.ants.iterkeys().next()
         candidate = self.ants[id]
-
         del self.ants[id]
-        if len(self.ants) == 1:
-            # TODO there's only one ant left in the blob, return it to ant status and delete the blob.
-            pass
         return candidate
 
     def search_and_update(self, mask):
@@ -98,6 +97,8 @@ class AntBlob:
 def dist(p1, p2):
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 )
 
+
+# Finds the nearest white pixel to a given point.
 # https://stackoverflow.com/a/45225986
 def find_nearest_white(img, target):
     nonzero = cv2.findNonZero(img)
@@ -106,23 +107,7 @@ def find_nearest_white(img, target):
     return nonzero[nearest_index][0]
 
 
-def find_ants(mask):
-    used_pixels = set()
-    ants = list()
-
-    for y in range(len(mask)):
-        for x in range(len(mask[y])):
-            if (x, y) not in used_pixels and mask[y, x] == 255:
-                ant_pixels = flood_fill(mask, x, y)
-                # See if it's actually an ant here somehow. (Probably just size it up)
-                if len(ant_pixels) > MIN_ANT_SIZE:
-                    ants.append(Ant(ant_pixels))
-                    used_pixels.update(ant_pixels)
-
-    return ants
-
-
-# TODO: This is pretty similar to find_ants, they should probably share code somehow.
+# Takes a list of ants and blobs, and finds any new pixels that don't belong to either.
 def find_new_ants(mask, ants, antBlobs):
     used_pixels = set()
     for ant in ants:
@@ -139,7 +124,6 @@ def find_new_ants(mask, ants, antBlobs):
                     new_ants.append(Ant(ant_pixels))
                     used_pixels.update(ant_pixels)
     return new_ants
-
 
 
 def flood_fill(mask, seed_x, seed_y):
@@ -177,7 +161,9 @@ def flood_fill(mask, seed_x, seed_y):
     return filled_pixels
 
 
-def printCoords(event,x,y,flags,param):
+# Prints the coordinates of the mouse on click.
+# TODO ideally we should have a live display of the mouses current coordinates to make debugging easier.
+def print_coords(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         print x, y
 
@@ -187,7 +173,7 @@ if __name__ == "__main__":
     bgSubtractor = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background subtractor.
 
     cv2.namedWindow("fgmask")
-    cv2.setMouseCallback("fgmask", printCoords)
+    cv2.setMouseCallback("fgmask", print_coords)
 
     # Skip first 200 frames to build up history for the background subtractor.
     for _ in range(200):
@@ -195,9 +181,8 @@ if __name__ == "__main__":
         frame = cv2.GaussianBlur(frame, (5, 5), 0)
         bgSubtractor.apply(frame)
 
-    firstFrame = True
     ants = list()
-    antBlobs = list()
+    ant_blobs = list()
     while cap.isOpened():  # While video is opened
         _, frame = cap.read()
         print "***FRAME {}***".format(int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
@@ -207,46 +192,45 @@ if __name__ == "__main__":
         fgmask = bgSubtractor.apply(frame)  # Apply the frame to the background subtractor. fgmask is the result of subtracting the background.
         fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
 
-        if firstFrame:
-            firstFrame = False
-            ants = find_ants(fgmask[:,:,0])
-        else:
-            for ant in ants:
-                ant.search_and_update(fgmask[:,:,0])
-            for blob in antBlobs:
-                blob.search_and_update(fgmask[:,:,0])
-            # TODO check if two blobs have overlapped and merge them
-            # Search for any pixels that don't belong to an existing ant or blob.
-            # If there is a blob within range, assume it came from that.
-            new_ants = find_new_ants(fgmask[:,:,0], ants, antBlobs)
-            print "*****\nUn-tracked ants\n"
-            for new_ant in new_ants:
-                from_blob = False
-                print "\t{}".format(new_ant)
-                for blob in antBlobs:
-                    # TODO replace magic 100 with a reasonable distance
-                    if dist(new_ant.centre, blob.prime.centre) < 50:
-                        from_blob = True
-                        print "Possible blob exit: " + str(new_ant) + " from " + str(blob)
-                        ant_from_blob = blob.exit(new_ant)
-                        if ant_from_blob is None:
-                            # The blob had no ants to give.
-                            ants.append(new_ant)
-                        else:
-                            # Ant taken from blob.
-                            ant_from_blob.update(new_ant.pixels)
-                            ants.append(ant_from_blob)
-                        if len(blob.ants) == 1:
-                            # TODO passing the prime ant here currently does nothing, but may break stuff when we
-                            # actually look at an ants parameters when determining which ant should be pulled from the blob.
-                            final_ant = blob.exit(blob.prime)
-                            final_ant.update(blob.prime.pixels)
-                            ants.append(final_ant)
-                            antBlobs.remove(blob)
-                if not from_blob:
-                    # Ant is entirely new.
-                    ants.append(new_ant)
-            print "#####END"
+        # Update ant and blob positions.
+        for ant in ants:
+            ant.search_and_update(fgmask[:,:,0])
+        for blob in ant_blobs:
+            blob.search_and_update(fgmask[:,:,0])
+
+        # TODO check if two blobs have overlapped and merge them
+
+        # Search for any pixels that don't belong to an existing ant or blob.
+        # If there is a blob within range, assume it came from that, otherwise assume it is a new ant.
+        new_ants = find_new_ants(fgmask[:,:,0], ants, ant_blobs)
+        print "*****\nUn-tracked ants\n"
+        for new_ant in new_ants:
+            from_blob = False
+            print "\t{}".format(new_ant)
+            for blob in ant_blobs:
+                # TODO replace magic 100 with a reasonable distance
+                if dist(new_ant.centre, blob.prime.centre) < 50:
+                    from_blob = True
+                    print "Possible blob exit: " + str(new_ant) + " from " + str(blob)
+                    ant_from_blob = blob.exit(new_ant)
+                    if ant_from_blob is None:
+                        # The blob had no ants to give.
+                        ants.append(new_ant)
+                    else:
+                        # Ant taken from blob.
+                        ant_from_blob.update(new_ant.pixels)
+                        ants.append(ant_from_blob)
+                    if len(blob.ants) == 1:
+                        # TODO passing the prime ant here currently does nothing, but may break stuff when we
+                        # actually look at an ants parameters when determining which ant should be pulled from the blob.
+                        final_ant = blob.exit(blob.prime)
+                        final_ant.update(blob.prime.pixels)
+                        ants.append(final_ant)
+                        ant_blobs.remove(blob)
+            if not from_blob:
+                # Ant is entirely new.
+                ants.append(new_ant)
+        print "#####END"
 
         # Check each ant to see if they have entered or formed a blob.
         # We do this by checking if the ants pixels overlap with an ant or a blob.
@@ -254,7 +238,7 @@ if __name__ == "__main__":
             ant_blobbed = False
             # We check against existing blobs first, otherwise we may end up having overlapping ants ending
             # up in separate blob instances.
-            for blob in antBlobs:
+            for blob in ant_blobs:
                 if blob.overlaps(ant):
                     ant_blobbed = True
                     ants.remove(ant)
@@ -271,20 +255,20 @@ if __name__ == "__main__":
                         ants.remove(other)
                         newBlob = AntBlob(ant)
                         newBlob.add(other)
-                        antBlobs.append(newBlob)
+                        ant_blobs.append(newBlob)
                         print "New blob formed: " + str(newBlob)
                         break
 
         for ant in ants:
             ant.draw(fgmask)
 
-        for blob in antBlobs:
+        for blob in ant_blobs:
             blob.draw(fgmask)
 
         # cv2.imshow('original', original_frame)  # Draw the original frame image
         cv2.imshow('fgmask', fgmask)  # Draw the foreground mask
 
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if cv2.waitKey(0) & 0xFF == ord('q'):
             break
 
     cap.release()
