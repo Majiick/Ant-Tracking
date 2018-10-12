@@ -6,7 +6,6 @@ import math
 
 MIN_ANT_SIZE = 15   # TODO should find a way to reasonably determine this.
 
-
 class Ant:
     id = 0
 
@@ -220,7 +219,7 @@ if __name__ == "__main__":
         # Check for un-tracked ants.
         # If there is a blob within range of an un-tracked ant, assume it came from that, otherwise it is a new ant.
         new_ants = find_new_ants(fgmask[:,:,0], ants, ant_blobs)
-        print "*****\nUn-tracked ants\n"
+        print "*****\nUn-tracked ants:\n"
         for new_ant in new_ants:
             from_blob = False
             print "\t{}".format(new_ant)
@@ -247,25 +246,24 @@ if __name__ == "__main__":
             if not from_blob:
                 # Ant is entirely new.
                 ants.append(new_ant)
-        print "#####END"
+        print "*****"
 
         # Check each ant to see if they have entered or formed a blob.
         # We do this by checking if the ants pixels overlap with an ant or a blob.
         for ant in ants:
-            ant_blobbed = False
+            added_to_blob = False
             # We check against existing blobs first, otherwise we may end up having overlapping ants ending
             # up in separate blob instances.
             for blob in ant_blobs:
                 if ant.overlaps(blob.prime):
-                    ant_blobbed = True
+                    added_to_blob = True
                     ants.remove(ant)
                     blob.add(ant)
                     print "{} has joined blob: {}".format(ant.id, blob)
                     break
-
-            # We don't want to check for overlapping if it ended up in a blob this frame.
-            # Any overlapping ants will inevitably join the same blob.
-            if not ant_blobbed:
+            # We don't need to check if it overlaps other ants if it ended up in a blob this frame, since those ants
+            # will inevitably join the same blob.
+            if not added_to_blob:
                 for other in ants:
                     if ant != other and ant.overlaps(other):
                         ants.remove(ant)
@@ -276,9 +274,9 @@ if __name__ == "__main__":
                         print "New blob formed: " + str(newBlob)
                         break
 
+        # Draw tracking info for ants and blobs.
         for ant in ants:
             ant.draw(fgmask)
-
         for blob in ant_blobs:
             blob.draw(fgmask)
 
@@ -293,5 +291,3 @@ if __name__ == "__main__":
 
     cap.release()
     cv2.destroyAllWindows()
-
-
