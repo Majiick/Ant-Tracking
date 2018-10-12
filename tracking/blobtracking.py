@@ -4,7 +4,7 @@ import sys
 import copy
 import math
 
-MIN_ANT_SIZE = 15
+MIN_ANT_SIZE = 15   # TODO should find a way to reasonably determine this.
 
 
 class Ant:
@@ -26,12 +26,11 @@ class Ant:
         for pixel in pixels:
             if pixel[0] > self.maxX:
                 self.maxX = pixel[0]
-            elif pixel[0] < self.minX:
+            if pixel[0] < self.minX:
                 self.minX = pixel[0]
-
             if pixel[1] > self.maxY:
                 self.maxY = pixel[1]
-            elif pixel[1] < self.minY:
+            if pixel[1] < self.minY:
                 self.minY = pixel[1]
 
         self.centre = self.minX + ((self.maxX - self.minX) / 2), self.minY + ((self.maxY - self.minY) / 2)
@@ -51,8 +50,7 @@ class Ant:
 
     def draw(self, img, box_color=(0, 0, 255)):
         cv2.rectangle(img=img, pt1=(self.minX, self.minY), pt2=(self.maxX, self.maxY), color=box_color, thickness=1)
-        cv2.putText(img=img, text=str(self.id), org=self.centre, fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(0, 0, 0), thickness=2)
-        cv2.putText(img=img, text=str(self.id), org=self.centre, fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=1, color=(255, 255, 255), thickness=1)
+        draw_text(img, str(self.id), self.centre, 1)
 
     def __str__(self):
         return "{}: {}, width: {}, height: {}, size: {}".format(self.id, self.centre, self.maxX-self.minX, self.maxY-self.minY, self.size)
@@ -64,7 +62,7 @@ class AntBlob:
     def __init__(self, ant):
         self.id = AntBlob.id
         AntBlob.id += 1
-        # TODO: deal with prime ant leaving the blob.
+        # prime isn't really an ant, it's just used to keep track of where the blob is.
         self.prime = copy.deepcopy(ant)
         self.prime.id = self.id
         self.ants = dict()
@@ -81,11 +79,15 @@ class AntBlob:
         del self.ants[id]
         return candidate
 
+    def merge(self, other):
+        for ant in other.ants.itervalues():
+            self.add(ant)
+
     def search_and_update(self, mask):
         self.prime.search_and_update(mask)
 
     def overlaps(self, other):
-        return self.prime.overlaps(other)
+        return self.prime.overlaps(other.prime)
 
     def draw(self, img):
         self.prime.draw(img, box_color=(0,255,255))
@@ -161,6 +163,13 @@ def flood_fill(mask, seed_x, seed_y):
     return filled_pixels
 
 
+# Draws white text with a black border to improve readability.
+def draw_text(img, text, org, fontScale):
+    cv2.putText(img=img, text=str(text), org=org, fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=fontScale,
+                color=(0, 0, 0), thickness=2)
+    cv2.putText(img=img, text=str(text), org=org, fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=fontScale,
+                color=(255, 255, 255), thickness=1)
+
 # Prints the coordinates of the mouse on click.
 # TODO ideally we should have a live display of the mouses current coordinates to make debugging easier.
 def print_coords(event, x, y, flags, param):
@@ -185,7 +194,8 @@ if __name__ == "__main__":
     ant_blobs = list()
     while cap.isOpened():  # While video is opened
         _, frame = cap.read()
-        print "***FRAME {}***".format(int(cap.get(cv2.CAP_PROP_POS_FRAMES)))
+        frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        print "***FRAME {}***".format(frame_num)
         original_frame = frame.copy()  # Save the original frame so we can use it for reference later on.
 
         frame = cv2.GaussianBlur(frame, (5, 5), 0)  # Blur the image using a gaussian blur with a 5x5 kernel.
@@ -198,17 +208,24 @@ if __name__ == "__main__":
         for blob in ant_blobs:
             blob.search_and_update(fgmask[:,:,0])
 
-        # TODO check if two blobs have overlapped and merge them
+        # Check if any blobs have merged.
+        for blob in ant_blobs:
+            for other in ant_blobs:
+                if blob != other and blob.overlaps(other):
+                    print "Merging blobs: {} and {}".format(blob, other)
+                    blob.merge(other)
+                    # TODO will removing from the list while iterating break stuff?
+                    ant_blobs.remove(other)
 
-        # Search for any pixels that don't belong to an existing ant or blob.
-        # If there is a blob within range, assume it came from that, otherwise assume it is a new ant.
+        # Check for un-tracked ants.
+        # If there is a blob within range of an un-tracked ant, assume it came from that, otherwise it is a new ant.
         new_ants = find_new_ants(fgmask[:,:,0], ants, ant_blobs)
         print "*****\nUn-tracked ants\n"
         for new_ant in new_ants:
             from_blob = False
             print "\t{}".format(new_ant)
             for blob in ant_blobs:
-                # TODO replace magic 100 with a reasonable distance
+                # TODO replace magic distance number with something reasonable
                 if dist(new_ant.centre, blob.prime.centre) < 50:
                     from_blob = True
                     print "Possible blob exit: " + str(new_ant) + " from " + str(blob)
@@ -239,7 +256,7 @@ if __name__ == "__main__":
             # We check against existing blobs first, otherwise we may end up having overlapping ants ending
             # up in separate blob instances.
             for blob in ant_blobs:
-                if blob.overlaps(ant):
+                if ant.overlaps(blob.prime):
                     ant_blobbed = True
                     ants.remove(ant)
                     blob.add(ant)
@@ -265,10 +282,13 @@ if __name__ == "__main__":
         for blob in ant_blobs:
             blob.draw(fgmask)
 
+        # Draw the frame number in the top left corner for debugging purposes.
+        draw_text(fgmask, frame_num, (5,30), 2)
+
         # cv2.imshow('original', original_frame)  # Draw the original frame image
         cv2.imshow('fgmask', fgmask)  # Draw the foreground mask
 
-        if cv2.waitKey(0) & 0xFF == ord('q'):
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
