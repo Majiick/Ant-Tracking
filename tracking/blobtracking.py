@@ -3,8 +3,10 @@ import cv2
 import sys
 import copy
 import math
+import bisect
 
 MIN_ANT_SIZE = 15   # TODO should find a way to reasonably determine this.
+
 
 class Ant:
     id = 0
@@ -12,11 +14,16 @@ class Ant:
     def __init__(self, pixels):
         self.id = Ant.id
         Ant.id+=1
+        self.prev_sizes = list()
+        self.prev_centres = list()
         self.update(pixels)
 
     def update(self, pixels):
         self.pixels = pixels
         self.size = len(pixels)
+        # Store the length in a sorted list to allow the median to quickly be determined.
+        # It is important that an ant is never updated in a blob to prevent incorrect sizes ending up in this.
+        bisect.insort(self.prev_sizes, self.size)
 
         self.minX = sys.maxint
         self.maxX = 0
@@ -33,16 +40,29 @@ class Ant:
                 self.minY = pixel[1]
 
         self.centre = self.minX + ((self.maxX - self.minX) / 2), self.minY + ((self.maxY - self.minY) / 2)
+        # The coordinates of an ant are stored each frame to allow us to determine its direction of travel.
+        self.prev_centres.append(self.centre)
 
     def search_and_update(self, mask):
         # TODO we need to deal with ants leaving the screen. At the moment, when they do leave the screen, this will
         # just find the nearest ant, which inevitably leads to a blob forming that shouldn't. Should probably do
         # something along the lines of not tracking any ants that have pixels on the border of the screen.
         nearest = find_nearest_white(mask, self.centre)
-        pixels = flood_fill(fgmask[:,:,0], nearest[0], nearest[1])
+        pixels = flood_fill(mask, nearest[0], nearest[1])
         # TODO: If the size is significantly smaller here, the we've found a small subset of pixels near the ant,
         # and in that case we should continue searching somehow until we find the rest of the ant.
         self.update(pixels)
+
+    def direction(self):
+        if len(self.prev_centres) < 2:
+            # Not much we can do if we have no historical data on the ant, at least returning zero will make it deterministic.
+            return 0
+        # TODO For now, we just get the direction based on the last two centres, we probably should get the average
+        # direction over the ant's lifetime.
+        return direction(self.prev_centres[-2], self.prev_centres[-1])
+
+    def median_size(self):
+        return np.median(self.prev_sizes)
 
     def overlaps(self, other):
         return not self.pixels.isdisjoint(other.pixels)
@@ -70,13 +90,34 @@ class AntBlob:
     def add(self, ant):
         self.ants[ant.id] = ant
 
-    def exit(self, ant):
-        # TODO: for now this just removes a random ant, need to update the Ant class to store more info so
-        # we can determine which ant is most likely leaving.
-        id = self.ants.iterkeys().next()
-        candidate = self.ants[id]
-        del self.ants[id]
+    def exit(self, leaver_ant):
+        # Check which ant is closest direction-wise.
+        # We look at the prime ant's position in the last frame, since blob positions are updated before checking for
+        # ants that have left.
+        leaver_direction = direction(self.prime.prev_centres[-2], leaver_ant.centre)
+        leaver_size = leaver_ant.size
+
+        best_weight = sys.maxint  # Smaller weight is better.
+        best_key = -1
+        for ant_key in self.ants:
+            angle_difference = difference_in_direction(self.ants[ant_key].direction(), leaver_direction)
+            size_difference = math.fabs((float(leaver_size) - self.ants[ant_key].median_size()) / leaver_size)
+            # TODO we could weight these differently to improve the accuracy.
+            current_weight = size_difference + angle_difference
+            if current_weight < best_weight:
+                best_weight = current_weight
+                best_key = ant_key
+
+        candidate = self.ants[best_key]
+        del self.ants[best_key]
         return candidate
+
+    def remove_last_ant(self):
+        assert(len(self.ants) == 1)
+        id = self.ants.iterkeys().next()
+        final_ant = self.ants[id]
+        del self.ants[id]
+        return final_ant
 
     def merge(self, other):
         for ant in other.ants.itervalues():
@@ -97,6 +138,19 @@ class AntBlob:
 
 def dist(p1, p2):
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 )
+
+
+# Returns the direction between two points in radians.
+def direction(from_, to):
+    return math.atan2(to[1] - from_[1], to[0] - from_[0])
+
+
+# Returns the positive value of the smaller difference between two angles in radians.
+def difference_in_direction(d1, d2):
+    diff = math.fabs(d1 - d2)
+    if diff > math.pi:
+        diff -= math.pi * 2
+    return math.fabs(diff)
 
 
 # Finds the nearest white pixel to a given point.
@@ -169,6 +223,7 @@ def draw_text(img, text, org, fontScale):
     cv2.putText(img=img, text=str(text), org=org, fontFace=cv2.FONT_HERSHEY_PLAIN, fontScale=fontScale,
                 color=(255, 255, 255), thickness=1)
 
+
 # Prints the coordinates of the mouse on click.
 # TODO ideally we should have a live display of the mouses current coordinates to make debugging easier.
 def print_coords(event, x, y, flags, param):
@@ -176,7 +231,7 @@ def print_coords(event, x, y, flags, param):
         print x, y
 
 
-if __name__ == "__main__":
+def main():
     cap = cv2.VideoCapture('../video1.mp4')  # Load capture video.
     bgSubtractor = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background subtractor.
 
@@ -199,6 +254,7 @@ if __name__ == "__main__":
 
         frame = cv2.GaussianBlur(frame, (5, 5), 0)  # Blur the image using a gaussian blur with a 5x5 kernel.
         fgmask = bgSubtractor.apply(frame)  # Apply the frame to the background subtractor. fgmask is the result of subtracting the background.
+        # TODO not sure if we actually need to convert this to BGR
         fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
 
         # Update ant and blob positions.
@@ -239,7 +295,7 @@ if __name__ == "__main__":
                     if len(blob.ants) == 1:
                         # TODO passing the prime ant here currently does nothing, but may break stuff when we
                         # actually look at an ants parameters when determining which ant should be pulled from the blob.
-                        final_ant = blob.exit(blob.prime)
+                        final_ant = blob.remove_last_ant()
                         final_ant.update(blob.prime.pixels)
                         ants.append(final_ant)
                         ant_blobs.remove(blob)
@@ -291,3 +347,7 @@ if __name__ == "__main__":
 
     cap.release()
     cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()
