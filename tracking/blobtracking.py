@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 import cv2
 import sys
@@ -5,9 +6,56 @@ import copy
 import math
 import bisect
 import random
+from PyQt4 import QtCore, QtGui
+from ui import Ui_MainWindow
+import time
+
 
 MIN_ANT_SIZE = 55   # TODO should find a way to reasonably determine this.
 MAX_FIND_NEAREST_DISTANCE = 50
+
+app = QtGui.QApplication(sys.argv)
+window = QtGui.QMainWindow()
+ui = Ui_MainWindow()
+ui.setupUi(window)
+
+
+play = True
+show_boxes = True
+show_lines = True
+original_image = True
+close = False
+paths = True
+boxes = True
+
+def play_pressed():
+    global play
+    play = True
+
+def pause_pressed():
+    global play
+    play = False
+
+def exit_pressed():
+    global close
+    close = True
+
+def toggle_paths_pressed():
+    global paths
+    paths = not paths
+
+def toggle_box_pressed():
+    global boxes
+    boxes = not boxes
+
+ui.playButton.clicked.connect(lambda: play_pressed())
+ui.pauseButton.clicked.connect(lambda: pause_pressed())
+ui.exitButton.clicked.connect(lambda: exit_pressed())
+ui.togglePathsButton.clicked.connect(lambda: toggle_paths_pressed())
+ui.toggleBoxesButton.clicked.connect(lambda: toggle_box_pressed())
+
+
+window.show()
 
 
 class Ant:
@@ -83,15 +131,17 @@ class Ant:
         return not self.pixels.isdisjoint(other.pixels)
 
     def draw(self, img, box_color=(0, 0, 255)):
-        cv2.rectangle(img=img, pt1=(self.minX, self.minY), pt2=(self.maxX, self.maxY), color=box_color, thickness=1)
+        if boxes:
+            cv2.rectangle(img=img, pt1=(self.minX, self.minY), pt2=(self.maxX, self.maxY), color=box_color, thickness=1)
         draw_text(img, str(self.id), self.centre, 1)
 
         # Draw lines
-        if len(self.prev_centres) > 1:
-            prev_pos = self.prev_centres[0]
-            for lp in self.prev_centres:
-                cv2.line(img,prev_pos,lp,self.color,1)
-                prev_pos = lp
+        if paths:
+            if len(self.prev_centres) > 1:
+                prev_pos = self.prev_centres[0]
+                for lp in self.prev_centres:
+                    cv2.line(img,prev_pos,lp,self.color,1)
+                    prev_pos = lp
 
     def __str__(self):
         return "{}: {}, width: {}, height: {}, size: {}".format(self.id, self.centre, self.maxX-self.minX, self.maxY-self.minY, self.size)
@@ -264,7 +314,7 @@ def draw_text(img, text, org, fontScale):
 # TODO ideally we should have a live display of the mouses current coordinates to make debugging easier.
 def print_coords(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
-        print x, y
+        print ('x {} y {}'.format(x, y))
 
 
 
@@ -284,11 +334,17 @@ ants = list()
 ant_blobs = list()
 frame_num = 0
 while cap.isOpened():  # While video is opened
+    if close:
+        break
+    if not play:
+        QtCore.QCoreApplication.processEvents()
+        continue
+    
     _, frame = cap.read()
     frame_original = frame.copy()
     global frame_num
     frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
-    print "***FRAME {}***".format(frame_num)
+    print("***FRAME {}***".format(frame_num))
     original_frame = frame.copy()  # Save the original frame so we can use it for reference later on.
 
     frame = cv2.GaussianBlur(frame, (5, 5), 0)  # Blur the image using a gaussian blur with a 5x5 kernel.
@@ -322,7 +378,7 @@ while cap.isOpened():  # While video is opened
     for blob in ant_blobs:
         for other in ant_blobs:
             if blob != other and blob.overlaps(other):
-                print "Merging blobs: {} and {}".format(blob, other)
+                print("Merging blobs: {} and {}".format(blob, other))
                 blob.merge(other)
                 # TODO will removing from the list while iterating break stuff?
                 ant_blobs.remove(other)
@@ -330,15 +386,15 @@ while cap.isOpened():  # While video is opened
     # Check for un-tracked ants.
     # If there is a blob within range of an un-tracked ant, assume it came from that, otherwise it is a new ant.
     new_ants = find_new_ants(fgmask[:,:,0], ants, ant_blobs)
-    print "*****\nUn-tracked ants:\n"
+    print("*****\nUn-tracked ants:\n")
     for new_ant in new_ants:
         from_blob = False
-        print "\t{}".format(new_ant)
+        print("\t{}".format(new_ant))
         for blob in ant_blobs:
             # TODO replace magic distance number with something reasonable
             if dist(new_ant.centre, blob.prime.centre) < 50:
                 from_blob = True
-                print "Possible blob exit: " + str(new_ant) + " from " + str(blob)
+                print("Possible blob exit: " + str(new_ant) + " from " + str(blob))
                 ant_from_blob = blob.exit(new_ant)
                 if ant_from_blob is None:
                     # The blob had no ants to give.
@@ -357,7 +413,7 @@ while cap.isOpened():  # While video is opened
         if not from_blob:
             # Ant is entirely new.
             ants.append(new_ant)
-    print "*****"
+    print("*****")
 
     # Check each ant to see if they have entered or formed a blob.
     # We do this by checking if the ants pixels overlap with an ant or a blob.
@@ -370,7 +426,7 @@ while cap.isOpened():  # While video is opened
                 added_to_blob = True
                 ants.remove(ant)
                 blob.add(ant)
-                print "{} has joined blob: {}".format(ant.id, blob)
+                print("{} has joined blob: {}".format(ant.id, blob))
                 break
         # We don't need to check if it overlaps other ants if it ended up in a blob this frame, since those ants
         # will inevitably join the same blob.
@@ -382,7 +438,7 @@ while cap.isOpened():  # While video is opened
                     newBlob = AntBlob(ant)
                     newBlob.add(other)
                     ant_blobs.append(newBlob)
-                    print "New blob formed: " + str(newBlob)
+                    print("New blob formed: " + str(newBlob))
                     break
 
     # Draw tracking info for ants and blobs.
