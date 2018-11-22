@@ -9,6 +9,7 @@ import random
 from PyQt4 import QtCore, QtGui
 from ui import Ui_MainWindow
 import time
+import cProfile
 
 
 MIN_ANT_SIZE = 55   # TODO should find a way to reasonably determine this.
@@ -56,6 +57,8 @@ ui.toggleBoxesButton.clicked.connect(lambda: toggle_box_pressed())
 
 
 window.show()
+
+tracked_ant = None
 
 
 class Ant:
@@ -132,6 +135,8 @@ class Ant:
 
     def draw(self, img, box_color=(0, 0, 255)):
         if boxes:
+            if self == tracked_ant:
+                box_color = (255, 0, 0)
             cv2.rectangle(img=img, pt1=(self.minX, self.minY), pt2=(self.maxX, self.maxY), color=box_color, thickness=1)
         draw_text(img, str(self.id), self.centre, 1)
 
@@ -316,6 +321,17 @@ def print_coords(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         print ('x {} y {}'.format(x, y))
 
+        found = False
+        for ant in ants:
+            if x > ant.minX and x < ant.maxX and y > ant.minY and y < ant.maxY:
+                found = True
+                global tracked_ant
+                tracked_ant = ant
+                break
+
+        if not found:
+            tracked_ant = None
+
 
 
 cap = cv2.VideoCapture('../video2.mp4')  # Load capture video.
@@ -323,12 +339,29 @@ bgSubtractor = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background
 
 cv2.namedWindow("fgmask")
 cv2.setMouseCallback("fgmask", print_coords)
+cv2.namedWindow("orig")
+cv2.setMouseCallback("orig", print_coords)
 
+background_img = None
 # Skip first 200 frames to build up history for the background subtractor.
 for _ in range(200):
     ret, frame = cap.read()
+    if background_img is not None:
+        background_img = background_img.copy() + frame.copy()
+
+    if background_img is None:
+        print('lol')
+        background_img = frame.copy()
+        background_img = np.array(background_img, dtype=np.uint32)
     frame = cv2.GaussianBlur(frame, (5, 5), 0)
     bgSubtractor.apply(frame)
+
+print(background_img)
+background_img = background_img * (1.0 / 200.0)
+background_img = np.array(background_img, dtype=np.uint8)
+print(background_img)
+cv2.imshow('lol', background_img)
+#exit()
 
 ants = list()
 ant_blobs = list()
@@ -442,16 +475,23 @@ while cap.isOpened():  # While video is opened
                     break
 
     # Draw tracking info for ants and blobs.
-    for ant in ants:
-        ant.draw(frame_original)
-    for blob in ant_blobs:
-        blob.draw(frame_original)
+    if not tracked_ant:
+        for ant in ants:
+            ant.draw(frame_original)
+        for blob in ant_blobs:
+            blob.draw(frame_original)
 
     # Draw the frame number in the top left corner for debugging purposes.
     draw_text(frame_original, frame_num, (5,30), 2)
 
     # cv2.imshow('original', original_frame)  # Draw the original frame image
     cv2.imshow('fgmask', fgmask)  # Draw the foreground mask
+
+    bg_edited = background_img.copy()
+    frame_edited = frame_original.copy()
+    if tracked_ant:
+        frame_original = bg_edited.copy()
+        frame_original[tracked_ant.minY: tracked_ant.maxY+1, tracked_ant.minX: tracked_ant.maxX+1, :] = frame_edited[tracked_ant.minY: tracked_ant.maxY+1, tracked_ant.minX: tracked_ant.maxX+1, :]
     cv2.imshow('orig', frame_original)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
