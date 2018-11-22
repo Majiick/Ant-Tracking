@@ -46,12 +46,6 @@ class Ui_MainWindow(object):
         self.toggleBoxesButton = QtGui.QPushButton(self.centralwidget)
         self.toggleBoxesButton.setGeometry(QtCore.QRect(10, 200, 112, 34))
         self.toggleBoxesButton.setObjectName(_fromUtf8("toggleBoxesButton"))
-        self.orignalImageButton = QtGui.QPushButton(self.centralwidget)
-        self.orignalImageButton.setGeometry(QtCore.QRect(10, 240, 112, 34))
-        self.orignalImageButton.setObjectName(_fromUtf8("orignalImageButton"))
-        self.maskImageButton = QtGui.QPushButton(self.centralwidget)
-        self.maskImageButton.setGeometry(QtCore.QRect(10, 280, 112, 34))
-        self.maskImageButton.setObjectName(_fromUtf8("maskImageButton"))
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtGui.QMenuBar(MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 146, 31))
@@ -72,8 +66,5 @@ class Ui_MainWindow(object):
         self.togglePathsButton.setText(_translate("MainWindow", "Toggle Paths", None))
         self.label.setText(_translate("MainWindow", "Tools:", None))
         self.toggleBoxesButton.setText(_translate("MainWindow", "Toggle Boxes", None))
-        self.orignalImageButton.setText(_translate("MainWindow", "Original Image", None))
-        self.maskImageButton.setText(_translate("MainWindow", "Mask Image", None))
-
 
 
