@@ -12,7 +12,7 @@ import time
 import cProfile
 
 
-MIN_ANT_SIZE = 55   # TODO should find a way to reasonably determine this.
+MIN_ANT_SIZE = 55
 MAX_FIND_NEAREST_DISTANCE = 50
 
 app = QtGui.QApplication(sys.argv)
@@ -54,13 +54,12 @@ ui.pauseButton.clicked.connect(lambda: pause_pressed())
 ui.exitButton.clicked.connect(lambda: exit_pressed())
 ui.togglePathsButton.clicked.connect(lambda: toggle_paths_pressed())
 ui.toggleBoxesButton.clicked.connect(lambda: toggle_box_pressed())
-
-
 window.show()
 
 tracked_ant = None
 
-
+# Abstraction for the Ant in code
+# Stores relevant information about the ant and contains method definitions for updating the ants tracking
 class Ant:
     id = 0
 
@@ -75,8 +74,6 @@ class Ant:
     def update(self, pixels):
         self.pixels = pixels
         self.size = len(pixels)
-        # Store the length in a sorted list to allow the median to quickly be determined.
-        # It is important that an ant is never updated in a blob to prevent incorrect sizes ending up in this.
         bisect.insort(self.prev_sizes, self.size)
 
         self.minX = sys.maxint
@@ -94,14 +91,10 @@ class Ant:
                 self.minY = pixel[1]
 
         self.centre = self.minX + ((self.maxX - self.minX) / 2), self.minY + ((self.maxY - self.minY) / 2)
-        # The coordinates of an ant are stored each frame to allow us to determine its direction of travel.
         self.prev_centres.append(self.centre)
 
     def search_and_update(self, mask):
-        # TODO we need to deal with ants leaving the screen. At the moment, when they do leave the screen, this will
-        # just find the nearest ant, which inevitably leads to a blob forming that shouldn't. Should probably do
-        # something along the lines of not tracking any ants that have pixels on the border of the screen.
-        if len(self.pixels) < MIN_ANT_SIZE:  # From previous frame
+        if len(self.pixels) < MIN_ANT_SIZE:
             return True
 
         nearest = find_nearest_white(mask, self.centre)
@@ -114,17 +107,14 @@ class Ant:
         pixels = flood_fill(mask, nearest[0], nearest[1])
         if len(pixels) < MIN_ANT_SIZE:
             return True
-        
-        # TODO: If the size is significantly smaller here, the we've found a small subset of pixels near the ant,
-        # and in that case we should continue searching somehow until we find the rest of the ant.
+
         self.update(pixels)
 
     def direction(self):
         if len(self.prev_centres) < 2:
-            # Not much we can do if we have no historical data on the ant, at least returning zero will make it deterministic.
+
             return 0
-        # TODO For now, we just get the direction based on the last two centres, we probably should get the average
-        # direction over the ant's lifetime.
+
         return direction(self.prev_centres[-2], self.prev_centres[-1])
 
     def median_size(self):
@@ -140,7 +130,6 @@ class Ant:
             cv2.rectangle(img=img, pt1=(self.minX, self.minY), pt2=(self.maxX, self.maxY), color=box_color, thickness=1)
         draw_text(img, str(self.id), self.centre, 1)
 
-        # Draw lines
         if paths:
             if len(self.prev_centres) > 1:
                 prev_pos = self.prev_centres[0]
@@ -151,14 +140,18 @@ class Ant:
     def __str__(self):
         return "{}: {}, width: {}, height: {}, size: {}".format(self.id, self.centre, self.maxX-self.minX, self.maxY-self.minY, self.size)
 
+    def getSize(self):
+        return self.size
 
+#Abstraction for the Ant Blob
+#Contains information relevant for tracking the ant blobs
+#Contains method definition for tracking blob, updating and dealing with separation
 class AntBlob:
     id = 0
 
     def __init__(self, ant):
         self.id = AntBlob.id
         AntBlob.id += 1
-        # prime isn't really an ant, it's just used to keep track of where the blob is.
         self.prime = copy.deepcopy(ant)
         self.prime.id = self.id
         self.ants = dict()
@@ -168,18 +161,14 @@ class AntBlob:
         self.ants[ant.id] = ant
 
     def exit(self, leaver_ant):
-        # Check which ant is closest direction-wise.
-        # We look at the prime ant's position in the last frame, since blob positions are updated before checking for
-        # ants that have left.
         leaver_direction = direction(self.prime.prev_centres[-2], leaver_ant.centre)
         leaver_size = leaver_ant.size
 
-        best_weight = sys.maxint  # Smaller weight is better.
+        best_weight = sys.maxint
         best_key = -1
         for ant_key in self.ants:
             angle_difference = difference_in_direction(self.ants[ant_key].direction(), leaver_direction)
             size_difference = math.fabs((float(leaver_size) - self.ants[ant_key].median_size()) / leaver_size)
-            # TODO we could weight these differently to improve the accuracy.
             current_weight = size_difference + angle_difference
             if current_weight < best_weight:
                 best_weight = current_weight
@@ -221,7 +210,7 @@ class AntBlob:
     def __str__(self):
         return str(self.prime) + ", ants: {" + ", ".join(str(ant.id) for ant in self.ants.values()) + "}"
 
-
+#Calculates the distance between 2 vectors
 def dist(p1, p2):
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 )
 
@@ -271,7 +260,8 @@ def find_new_ants(mask, ants, antBlobs):
                     used_pixels.update(ant_pixels)
     return new_ants
 
-
+#Flood fill algorithm which returns the pixels of a detected ant
+#Used for detecting the ants from frame to frame
 def flood_fill(mask, seed_x, seed_y):
     filled_pixels = set()
     queue = [(seed_x, seed_y)]
@@ -316,7 +306,6 @@ def draw_text(img, text, org, fontScale):
 
 
 # Prints the coordinates of the mouse on click.
-# TODO ideally we should have a live display of the mouses current coordinates to make debugging easier.
 def print_coords(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         print ('x {} y {}'.format(x, y))
@@ -332,41 +321,56 @@ def print_coords(event, x, y, flags, param):
         if not found:
             tracked_ant = None
 
-
+def get_min_ant_size(antSizes):
+    return min(antSizes)
 
 cap = cv2.VideoCapture('../video2.mp4')  # Load capture video.
 bgSubtractor = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background subtractor.
-
 cv2.namedWindow("fgmask")
 cv2.setMouseCallback("fgmask", print_coords)
 cv2.namedWindow("orig")
 cv2.setMouseCallback("orig", print_coords)
 
 background_img = None
+
+antSizes = list()
+ants = list()
+ant_blobs = list()
 # Skip first 200 frames to build up history for the background subtractor.
+# Collects all of the ant sizes from each frame to figure out minimum ant size
 for _ in range(200):
     ret, frame = cap.read()
     if background_img is not None:
         background_img = background_img.copy() + frame.copy()
 
     if background_img is None:
-        print('lol')
         background_img = frame.copy()
         background_img = np.array(background_img, dtype=np.uint32)
     frame = cv2.GaussianBlur(frame, (5, 5), 0)
     bgSubtractor.apply(frame)
 
+    fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
+
+    ants.clear()
+    ant_blobs.clear()
+    new_ants = find_new_ants(fgmask[:, :, 0], ants, ant_blobs)
+    antSizes.extend([ant.getSize() for ant in new_ants])
+
+MIN_ANT_SIZE = get_min_ant_size(antSizes)
+
 print(background_img)
 background_img = background_img * (1.0 / 200.0)
 background_img = np.array(background_img, dtype=np.uint8)
 print(background_img)
-cv2.imshow('lol', background_img)
-#exit()
+cv2.imshow('BackGroundImg', background_img)
 
-ants = list()
-ant_blobs = list()
+#Initialize the list ants and blobs will be stored
+ants.clear()
+ant_blobs.clear()
 frame_num = 0
-while cap.isOpened():  # While video is opened
+
+#While frames are streaming from the video
+while cap.isOpened():
     if close:
         break
     if not play:
@@ -378,14 +382,14 @@ while cap.isOpened():  # While video is opened
     global frame_num
     frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
     print("***FRAME {}***".format(frame_num))
-    original_frame = frame.copy()  # Save the original frame so we can use it for reference later on.
+    original_frame = frame.copy()
 
-    frame = cv2.GaussianBlur(frame, (5, 5), 0)  # Blur the image using a gaussian blur with a 5x5 kernel.
-    fgmask = bgSubtractor.apply(frame)  # Apply the frame to the background subtractor. fgmask is the result of subtracting the background.
-    # TODO not sure if we actually need to convert this to BGR
+    frame = cv2.GaussianBlur(frame, (5, 5), 0)
+    fgmask = bgSubtractor.apply(frame)
     fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
 
-    # Update ant and blob positions.
+    #Goes through the list of ants and blobs
+    #Detects which should be removed or not
     ants_to_remove = []
     for ant in ants:
         if ant.search_and_update(fgmask[:,:,0]):
@@ -393,8 +397,7 @@ while cap.isOpened():  # While video is opened
     for ant in ants_to_remove:
         ants.remove(ant)
 
-    #fgmask[:,:] = 0
-    for ant in ants_to_remove:  # Color in all the ants.
+    for ant in ants_to_remove:
         for p in ant.pixels:
             fgmask[p[1], p[0], :] = 0
 
@@ -405,15 +408,13 @@ while cap.isOpened():  # While video is opened
 
     for blob in blobs_to_remove:
         ant_blobs.remove(blob)
-        
 
-    # Check if any blobs have merged.
+    #Merges the blobs if merge detected
     for blob in ant_blobs:
         for other in ant_blobs:
             if blob != other and blob.overlaps(other):
                 print("Merging blobs: {} and {}".format(blob, other))
                 blob.merge(other)
-                # TODO will removing from the list while iterating break stuff?
                 ant_blobs.remove(other)
 
     # Check for un-tracked ants.
@@ -424,7 +425,6 @@ while cap.isOpened():  # While video is opened
         from_blob = False
         print("\t{}".format(new_ant))
         for blob in ant_blobs:
-            # TODO replace magic distance number with something reasonable
             if dist(new_ant.centre, blob.prime.centre) < 50:
                 from_blob = True
                 print("Possible blob exit: " + str(new_ant) + " from " + str(blob))
@@ -437,14 +437,12 @@ while cap.isOpened():  # While video is opened
                     ant_from_blob.update(new_ant.pixels)
                     ants.append(ant_from_blob)
                 if len(blob.ants) == 1:
-                    # TODO passing the prime ant here currently does nothing, but may break stuff when we
                     # actually look at an ants parameters when determining which ant should be pulled from the blob.
                     final_ant = blob.remove_last_ant()
                     final_ant.update(blob.prime.pixels)
                     ants.append(final_ant)
                     ant_blobs.remove(blob)
         if not from_blob:
-            # Ant is entirely new.
             ants.append(new_ant)
     print("*****")
 
