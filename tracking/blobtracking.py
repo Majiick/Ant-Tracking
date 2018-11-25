@@ -326,16 +326,11 @@ def print_coords(event, x, y, flags, param):
 f = easygui.fileopenbox()
 cap = cv2.VideoCapture(f)
 bgSubtractor = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background subtractor.
-cv2.namedWindow("fgmask")
-cv2.setMouseCallback("fgmask", print_coords)
 cv2.namedWindow("orig")
 cv2.setMouseCallback("orig", print_coords)
 
 background_img = None
 
-antSizes = list()
-ants = list()
-ant_blobs = list()
 # Skip first 200 frames to build up history for the background subtractor.
 # Collects all of the ant sizes from each frame to figure out minimum ant size
 for _ in range(200):
@@ -350,19 +345,14 @@ for _ in range(200):
     bgSubtractor.apply(frame)
 
 
-
-print(background_img)
 background_img = background_img * (1.0 / 200.0)
 background_img = np.array(background_img, dtype=np.uint8)
-print(background_img)
-cv2.imshow('BackGroundImg', background_img)
 
-#Initialize the list ants and blobs will be stored
-ants.clear()
-ant_blobs.clear()
-frame_num = 0
+# Initialize the list ants and blobs will be stored
+ants = list()
+ant_blobs = list()
 
-#While frames are streaming from the video
+# While frames are streaming from the video
 while cap.isOpened():
     if close:
         break
@@ -372,7 +362,6 @@ while cap.isOpened():
     
     _, frame = cap.read()
     frame_original = frame.copy()
-    global frame_num
     frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
     print("***FRAME {}***".format(frame_num))
     original_frame = frame.copy()
@@ -381,8 +370,8 @@ while cap.isOpened():
     fgmask = bgSubtractor.apply(frame)
     fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
 
-    #Goes through the list of ants and blobs
-    #Detects which should be removed or not
+    # Goes through the list of ants and blobs
+    # Detects which should be removed or not
     ants_to_remove = []
     for ant in ants:
         if ant.search_and_update(fgmask[:,:,0]):
@@ -402,7 +391,7 @@ while cap.isOpened():
     for blob in blobs_to_remove:
         ant_blobs.remove(blob)
 
-    #Merges the blobs if merge detected
+    # Merges the blobs if merge detected
     for blob in ant_blobs:
         for other in ant_blobs:
             if blob != other and blob.overlaps(other):
@@ -474,9 +463,6 @@ while cap.isOpened():
 
     # Draw the frame number in the top left corner for debugging purposes.
     draw_text(frame_original, frame_num, (5,30), 2)
-
-    # cv2.imshow('original', original_frame)  # Draw the original frame image
-    cv2.imshow('fgmask', fgmask)  # Draw the foreground mask
 
     bg_edited = background_img.copy()
     frame_edited = frame_original.copy()
