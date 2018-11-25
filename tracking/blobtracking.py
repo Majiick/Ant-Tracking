@@ -8,8 +8,6 @@ import bisect
 import random
 from PyQt4 import QtCore, QtGui
 from ui import Ui_MainWindow
-import time
-import cProfile
 import easygui
 
 
@@ -21,7 +19,6 @@ window = QtGui.QMainWindow()
 ui = Ui_MainWindow()
 ui.setupUi(window)
 
-
 play = True
 show_boxes = True
 show_lines = True
@@ -30,9 +27,11 @@ close = False
 paths = True
 boxes = True
 
+
 def play_pressed():
     global play
     play = True
+
 
 def pause_pressed():
     global play
@@ -42,13 +41,16 @@ def exit_pressed():
     global close
     close = True
 
+
 def toggle_paths_pressed():
     global paths
     paths = not paths
 
+
 def toggle_box_pressed():
     global boxes
     boxes = not boxes
+
 
 ui.playButton.clicked.connect(lambda: play_pressed())
 ui.pauseButton.clicked.connect(lambda: pause_pressed())
@@ -59,8 +61,8 @@ window.show()
 
 tracked_ant = None
 
-# Abstraction for the Ant in code
-# Stores relevant information about the ant and contains method definitions for updating the ants tracking
+
+# Stores relevant information about the ant and contains method definitions for updating the ants tracking.
 class Ant:
     id = 0
 
@@ -103,8 +105,6 @@ class Ant:
         if distance > MAX_FIND_NEAREST_DISTANCE:
             return True
 
-        if self.id == 9:
-            print('wololo {}'.format(nearest))
         pixels = flood_fill(mask, nearest[0], nearest[1])
         if len(pixels) < MIN_ANT_SIZE:
             return True
@@ -144,9 +144,9 @@ class Ant:
     def getSize(self):
         return self.size
 
-#Abstraction for the Ant Blob
-#Contains information relevant for tracking the ant blobs
-#Contains method definition for tracking blob, updating and dealing with separation
+
+# Stores information relevant for tracking ant blob, and contains method definition for tracking blob, updating and
+# dealing with separation.
 class AntBlob:
     id = 0
 
@@ -211,7 +211,8 @@ class AntBlob:
     def __str__(self):
         return str(self.prime) + ", ants: {" + ", ".join(str(ant.id) for ant in self.ants.values()) + "}"
 
-#Calculates the distance between 2 vectors
+
+# Returns the distance between 2 points.
 def dist(p1, p2):
     return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 )
 
@@ -254,15 +255,13 @@ def find_new_ants(mask, ants, antBlobs):
                 ant_pixels = flood_fill(mask, x, y)
                 if len(ant_pixels) > MIN_ANT_SIZE:
                     new_ant = Ant(ant_pixels)
-                    if new_ant.id == 28:
-                        print('here')
-                        print(len(new_ant.pixels))
                     new_ants.append(new_ant)
                     used_pixels.update(ant_pixels)
     return new_ants
 
-#Flood fill algorithm which returns the pixels of a detected ant
-#Used for detecting the ants from frame to frame
+
+# Flood fill algorithm which returns all white pixels connected to the seed point.
+# Used for detecting the ants from frame to frame.
 def flood_fill(mask, seed_x, seed_y):
     filled_pixels = set()
     queue = [(seed_x, seed_y)]
@@ -307,7 +306,7 @@ def draw_text(img, text, org, fontScale):
 
 
 # Prints the coordinates of the mouse on click.
-def print_coords(event, x, y, flags, param):
+def select_ant(event, x, y, flags, param):
     if event == cv2.EVENT_LBUTTONDOWN:
         print ('x {} y {}'.format(x, y))
 
@@ -326,8 +325,8 @@ def print_coords(event, x, y, flags, param):
 f = easygui.fileopenbox()
 cap = cv2.VideoCapture(f)
 bgSubtractor = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background subtractor.
-cv2.namedWindow("orig")
-cv2.setMouseCallback("orig", print_coords)
+cv2.namedWindow("Ants")
+cv2.setMouseCallback("Ants", select_ant)
 
 background_img = None
 
@@ -461,15 +460,15 @@ while cap.isOpened():
         for blob in ant_blobs:
             blob.draw(frame_original)
 
-    # Draw the frame number in the top left corner for debugging purposes.
-    draw_text(frame_original, frame_num, (5,30), 2)
+    # Draw the frame number in the top left corner.
+    draw_text(frame_original, frame_num, (5, 30), 2)
 
     bg_edited = background_img.copy()
     frame_edited = frame_original.copy()
     if tracked_ant:
         frame_original = bg_edited.copy()
         frame_original[tracked_ant.minY: tracked_ant.maxY+1, tracked_ant.minX: tracked_ant.maxX+1, :] = frame_edited[tracked_ant.minY: tracked_ant.maxY+1, tracked_ant.minX: tracked_ant.maxX+1, :]
-    cv2.imshow('orig', frame_original)
+    cv2.imshow("Ants", frame_original)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
