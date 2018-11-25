@@ -1,3 +1,28 @@
+# Ant tracking.
+#
+# Authors:
+#   Padraig Redmond
+#   Zan Smirnov
+#   Evgeny Timoshin
+#
+# ### Algorithm ###
+#
+# Pre-processing:
+# <add stuff about preprocessing
+#
+# For each frame:
+# 1. For every ant and blob, search for their new location and update.
+#       If their size falls below a certain threshold they are no longer tracked.
+# 2. Check if any blobs have merged, if so combine them.
+# 3. Check for and new ants.
+#       If these are near a blob, then we assume they came from it and update both as such.
+#       Otherwise they are a new ant and are added to the list of tracked ants.
+# 4. Check each ant to see if they have joined an existing blob, or formed a new one.
+# 5. Now that everything has been updated for this frame, draw bounding boxes, id numbers and paths for each ant.
+#
+# UI controls:
+# <add stuff about UI controls>
+
 from __future__ import print_function
 import numpy as np
 import cv2
@@ -36,6 +61,7 @@ def play_pressed():
 def pause_pressed():
     global play
     play = False
+
 
 def exit_pressed():
     global close
@@ -369,8 +395,8 @@ while cap.isOpened():
     fgmask = bgSubtractor.apply(frame)
     fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
 
-    # Goes through the list of ants and blobs
-    # Detects which should be removed or not
+    # Update the positions of every ant and blob.
+    # If a blob or ant shrinks below a certain size they are no longer tracked.
     ants_to_remove = []
     for ant in ants:
         if ant.search_and_update(fgmask[:,:,0]):
@@ -390,7 +416,7 @@ while cap.isOpened():
     for blob in blobs_to_remove:
         ant_blobs.remove(blob)
 
-    # Merges the blobs if merge detected
+    # Check for any blob overlaps and merge if so.
     for blob in ant_blobs:
         for other in ant_blobs:
             if blob != other and blob.overlaps(other):
