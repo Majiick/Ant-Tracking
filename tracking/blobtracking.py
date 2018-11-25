@@ -10,6 +10,7 @@ from PyQt4 import QtCore, QtGui
 from ui import Ui_MainWindow
 import time
 import cProfile
+import easygui
 
 
 MIN_ANT_SIZE = 55
@@ -321,10 +322,9 @@ def print_coords(event, x, y, flags, param):
         if not found:
             tracked_ant = None
 
-def get_min_ant_size(antSizes):
-    return min(antSizes)
 
-cap = cv2.VideoCapture('../video2.mp4')  # Load capture video.
+f = easygui.fileopenbox()
+cap = cv2.VideoCapture(f)
 bgSubtractor = cv2.bgsegm.createBackgroundSubtractorMOG()  # Create a background subtractor.
 cv2.namedWindow("fgmask")
 cv2.setMouseCallback("fgmask", print_coords)
@@ -349,14 +349,7 @@ for _ in range(200):
     frame = cv2.GaussianBlur(frame, (5, 5), 0)
     bgSubtractor.apply(frame)
 
-    fgmask = cv2.cvtColor(fgmask, cv2.COLOR_GRAY2BGR)
 
-    ants.clear()
-    ant_blobs.clear()
-    new_ants = find_new_ants(fgmask[:, :, 0], ants, ant_blobs)
-    antSizes.extend([ant.getSize() for ant in new_ants])
-
-MIN_ANT_SIZE = get_min_ant_size(antSizes)
 
 print(background_img)
 background_img = background_img * (1.0 / 200.0)
