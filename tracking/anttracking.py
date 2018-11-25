@@ -5,10 +5,15 @@
 #   Zan Smirnov
 #   Evgeny Timoshin
 #
-# ### Algorithm ###
+# TODO: stuff we could talk about:
+# Flood fill
+# background extraction with running average
+# arctan directional stuff
 #
+# ### Algorithm ###
 # Pre-processing:
-# <add stuff about preprocessing
+# We use a MOG background subtractor to isolate the ants from the background. The first 200 frames are used to build up
+# the history, and a Gaussian blur is also applied to each frame before being processed by the subtractor.
 #
 # For each frame:
 # 1. For every ant and blob, search for their new location and update.
@@ -20,8 +25,13 @@
 # 4. Check each ant to see if they have joined an existing blob, or formed a new one.
 # 5. Now that everything has been updated for this frame, draw bounding boxes, id numbers and paths for each ant.
 #
-# UI controls:
-# <add stuff about UI controls>
+# ### UI controls ###
+# The user can control the output by either clicking on ants or using the provided control buttons.
+#
+# The window containing the control buttons was created using PyQt4. It allows the user to toggle between playing and
+# pausing the video output. They can also toggle the display of the bounding boxes and paths for all ants.
+#
+# Clicking on an ant will isolate that ant. It will be displayed on its own over the extracted background image.
 
 from __future__ import print_function
 import numpy as np
@@ -357,7 +367,6 @@ cv2.setMouseCallback("Ants", select_ant)
 background_img = None
 
 # Skip first 200 frames to build up history for the background subtractor.
-# Collects all of the ant sizes from each frame to figure out minimum ant size
 for _ in range(200):
     ret, frame = cap.read()
     if background_img is not None:
@@ -369,15 +378,14 @@ for _ in range(200):
     frame = cv2.GaussianBlur(frame, (5, 5), 0)
     bgSubtractor.apply(frame)
 
-
 background_img = background_img * (1.0 / 200.0)
 background_img = np.array(background_img, dtype=np.uint8)
 
-# Initialize the list ants and blobs will be stored
+# Initialize the list ants and blobs will be stored in.
 ants = list()
 ant_blobs = list()
 
-# While frames are streaming from the video
+# While frames are streaming from the video.
 while cap.isOpened():
     if close:
         break
